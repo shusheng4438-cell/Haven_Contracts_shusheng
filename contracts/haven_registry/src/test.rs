@@ -68,12 +68,12 @@ fn test_register_device() {
     // Verify the DeviceRegistered event was emitted
     let events = env.events().all();
     assert!(!events.is_empty(), "Expected at least one event to be emitted");
-    
+
     let event = events.last().unwrap();
-    
+
     // Event structure: (contract_address, topics, data)
     let (_contract_id, topics, _data) = event;
-    
+
     // Verify topics contain "dev_reg" and "register"
     assert_eq!(topics.len(), 2);
 
@@ -93,13 +93,13 @@ fn test_register_device_emits_event() {
     // Verify event emission
     let events = env.events().all();
     assert_eq!(events.len(), 1, "Expected exactly one event to be emitted");
-    
+
     let event = events.first().unwrap();
     let (_contract_id, topics, _data) = event;
-    
+
     // Verify the event has the correct topic structure
     assert_eq!(topics.len(), 2, "Expected two topics: dev_reg and register");
-    
+
     // The topics should be symbols for "dev_reg" and "register"
     // We verify the count and structure, actual symbol validation would require
     // converting Val to Symbol which is more complex in tests
@@ -170,6 +170,71 @@ fn test_report_stolen_twice() {
     client.report_stolen(&owner, &hashed_imei, &1_000_000i128, &contact);
     // Should panic — already reported
     client.report_stolen(&owner, &hashed_imei, &1_000_000i128, &contact);
+}
+
+// ---------------------------------------------------------------------------
+// Killswitch — Minimum Bounty Validation Tests (Issue #4)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "bounty amount must be positive")]
+fn test_report_stolen_zero_bounty() {
+    let (env, client, _admin) = setup();
+    let owner = Address::generate(&env);
+    let hashed_imei = fake_hashed_imei(&env);
+    let model = String::from_str(&env, "iPhone 15 Pro");
+    let contact = String::from_str(&env, "owner@email.com");
+
+    client.register_device(&owner, &hashed_imei, &model);
+    // Should panic — zero bounty amount is rejected
+    client.report_stolen(&owner, &hashed_imei, &0i128, &contact);
+}
+
+#[test]
+#[should_panic(expected = "bounty amount must be positive")]
+fn test_report_stolen_negative_bounty() {
+    let (env, client, _admin) = setup();
+    let owner = Address::generate(&env);
+    let hashed_imei = fake_hashed_imei(&env);
+    let model = String::from_str(&env, "iPhone 15 Pro");
+    let contact = String::from_str(&env, "owner@email.com");
+
+    client.register_device(&owner, &hashed_imei, &model);
+    // Should panic — negative bounty amount is rejected
+    client.report_stolen(&owner, &hashed_imei, &-1i128, &contact);
+}
+
+#[test]
+#[should_panic(expected = "bounty amount below minimum threshold")]
+fn test_report_stolen_below_minimum() {
+    let (env, client, _admin) = setup();
+    let owner = Address::generate(&env);
+    let hashed_imei = fake_hashed_imei(&env);
+    let model = String::from_str(&env, "iPhone 15 Pro");
+    let contact = String::from_str(&env, "owner@email.com");
+
+    client.register_device(&owner, &hashed_imei, &model);
+    // Should panic — 50 is below the MIN_BOUNTY_AMOUNT of 100
+    client.report_stolen(&owner, &hashed_imei, &50i128, &contact);
+}
+
+#[test]
+fn test_report_stolen_minimum_bounty() {
+    let (env, client, _admin) = setup();
+    let owner = Address::generate(&env);
+    let hashed_imei = fake_hashed_imei(&env);
+    let model = String::from_str(&env, "iPhone 15 Pro");
+    let contact = String::from_str(&env, "owner@email.com");
+
+    client.register_device(&owner, &hashed_imei, &model);
+    // Exactly the minimum bounty amount — should succeed
+    client.report_stolen(&owner, &hashed_imei, &100i128, &contact);
+
+    let device = client.get_device(&hashed_imei);
+    assert_eq!(device.is_stolen, true);
+
+    let bounty = client.get_bounty(&hashed_imei);
+    assert_eq!(bounty, 100i128);
 }
 
 // ---------------------------------------------------------------------------
